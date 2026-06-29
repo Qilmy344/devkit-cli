@@ -27,10 +27,21 @@ def cmd_hash(args):
         sys.exit(1)
 
     if args.file:
-        h = hashlib.new(algo)
-        with open(args.file, "rb") as f:
-            for chunk in iter(lambda: f.read(8192), b""):
-                h.update(chunk)
+        path = os.path.realpath(args.file)
+        if not os.path.isfile(path):
+            print(f"Error: file not found — {args.file}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            h = hashlib.new(algo)
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    h.update(chunk)
+        except PermissionError:
+            print(f"Error: permission denied — {args.file}", file=sys.stderr)
+            sys.exit(1)
+        except OSError as e:
+            print(f"Error: cannot read file — {e}", file=sys.stderr)
+            sys.exit(1)
         digest = h.hexdigest()
         print(f"{algo.upper()}: {digest}  ({args.file})")
     else:
@@ -78,8 +89,13 @@ def cmd_decode(args):
 
 # ─── UUID ───────────────────────────────────────────────
 
+MAX_UUID_COUNT = 10000
+
 def cmd_uuid(args):
-    count = args.count or 1
+    count = args.count if args.count is not None else 1
+    if count < 1 or count > MAX_UUID_COUNT:
+        print(f"Error: count must be between 1 and {MAX_UUID_COUNT}", file=sys.stderr)
+        sys.exit(1)
     for _ in range(count):
         print(str(uuid.uuid4()))
 
@@ -153,8 +169,13 @@ def cmd_ts(args):
 
 # ─── Password ───────────────────────────────────────────
 
+MAX_PASSWORD_LENGTH = 2048
+
 def cmd_password(args):
-    length = args.length or 16
+    length = args.length
+    if length < 1 or length > MAX_PASSWORD_LENGTH:
+        print(f"Error: length must be between 1 and {MAX_PASSWORD_LENGTH}", file=sys.stderr)
+        sys.exit(1)
     chars = string.ascii_letters + string.digits
     if not args.no_symbols:
         chars += "!@#$%^&*()-_=+[]{}|;:,.<>?"
@@ -176,8 +197,13 @@ LOREM_WORDS = (
     "odit fugit consequuntur magni dolores eos ratione sequi nesciunt neque porro quisquam"
 ).split()
 
+MAX_LOREM_COUNT = 1000
+
 def cmd_lorem(args):
-    count = args.count or 1
+    count = args.count if args.count is not None else 1
+    if count < 1 or count > MAX_LOREM_COUNT:
+        print(f"Error: count must be between 1 and {MAX_LOREM_COUNT}", file=sys.stderr)
+        sys.exit(1)
     unit = (args.unit or "paragraphs").lower()
 
     sentences_per_para = 5

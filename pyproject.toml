@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 [project.scripts]
-devkit = "devkit:main"
+devkit = "devkit:_cli"
 
 [project.urls]
 Homepage = "https://github.com/REPO/devkit-cli"

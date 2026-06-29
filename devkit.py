@@ -7,10 +7,8 @@ import hashlib
 import json
 import os
 import random
-import re
 import string
 import sys
-import time
 import uuid
 from datetime import datetime, timezone
 from urllib.parse import quote, unquote
@@ -28,11 +26,27 @@ def cmd_hash(args):
 
     if args.file:
         h = hashlib.new(algo)
-        with open(args.file, "rb") as f:
-            for chunk in iter(lambda: f.read(8192), b""):
-                h.update(chunk)
+        try:
+            with open(args.file, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    h.update(chunk)
+        except FileNotFoundError:
+            print(f"Error: file not found — {args.file}", file=sys.stderr)
+            sys.exit(1)
+        except PermissionError:
+            print(f"Error: permission denied — {args.file}", file=sys.stderr)
+            sys.exit(1)
+        except IsADirectoryError:
+            print(f"Error: is a directory — {args.file}", file=sys.stderr)
+            sys.exit(1)
+        except OSError as e:
+            print(f"Error: cannot read file — {e}", file=sys.stderr)
+            sys.exit(1)
         digest = h.hexdigest()
         print(f"{algo.upper()}: {digest}  ({args.file})")
+    elif not args.input:
+        print("Error: provide a string to hash or use --file", file=sys.stderr)
+        sys.exit(1)
     else:
         data = " ".join(args.input).encode()
         digest = hashlib.new(algo, data).hexdigest()
@@ -79,7 +93,10 @@ def cmd_decode(args):
 # ─── UUID ───────────────────────────────────────────────
 
 def cmd_uuid(args):
-    count = args.count or 1
+    count = args.count if args.count is not None else 1
+    if count < 1:
+        print("Error: count must be at least 1", file=sys.stderr)
+        sys.exit(1)
     for _ in range(count):
         print(str(uuid.uuid4()))
 
@@ -154,7 +171,10 @@ def cmd_ts(args):
 # ─── Password ───────────────────────────────────────────
 
 def cmd_password(args):
-    length = args.length or 16
+    length = args.length
+    if length < 1:
+        print("Error: password length must be at least 1", file=sys.stderr)
+        sys.exit(1)
     chars = string.ascii_letters + string.digits
     if not args.no_symbols:
         chars += "!@#$%^&*()-_=+[]{}|;:,.<>?"
@@ -177,7 +197,10 @@ LOREM_WORDS = (
 ).split()
 
 def cmd_lorem(args):
-    count = args.count or 1
+    count = args.count if args.count is not None else 1
+    if count < 1:
+        print("Error: count must be at least 1", file=sys.stderr)
+        sys.exit(1)
     unit = (args.unit or "paragraphs").lower()
 
     sentences_per_para = 5
@@ -266,7 +289,26 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    dispatch[args.command](args)
+    handler = dispatch.get(args.command)
+    if handler is None:
+        print(f"Error: unknown command '{args.command}'", file=sys.stderr)
+        sys.exit(1)
+
+    handler(args)
+
+
+def _cli():
+    try:
+        main()
+    except BrokenPipeError:
+        # Silently handle broken pipe (e.g. piping to `head`)
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        sys.exit(0)
+    except KeyboardInterrupt:
+        print("", file=sys.stderr)
+        sys.exit(130)
+
 
 if __name__ == "__main__":
-    main()
+    _cli()

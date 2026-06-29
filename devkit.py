@@ -5,17 +5,45 @@ import argparse
 import base64
 import hashlib
 import json
-import os
 import random
-import re
 import string
 import sys
-import time
 import uuid
 from datetime import datetime, timezone
 from urllib.parse import quote, unquote
 
 __version__ = "1.0.0"
+
+# ─── Shared Utilities ───────────────────────────────────
+
+def die(message):
+    """Print an error message to stderr and exit with code 1."""
+    print(message, file=sys.stderr)
+    sys.exit(1)
+
+
+def get_text_input(args, default=None):
+    """Join args.input into a single string, falling back to *default*."""
+    if args.input:
+        return " ".join(args.input)
+    if default is not None:
+        return default
+    die("Error: no input provided")
+
+
+def parse_json(text):
+    """Parse a JSON string, exiting with an error on failure."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        die(f"Error: invalid JSON — {e}")
+
+
+def print_timestamp(dt):
+    """Print a datetime in the standard ISO + Unix format."""
+    print(f"ISO:     {dt.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    print(f"Unix:    {int(dt.timestamp())}")
+
 
 # ─── Hash ───────────────────────────────────────────────
 
@@ -23,8 +51,7 @@ def cmd_hash(args):
     algos = {"md5", "sha1", "sha256", "sha512"}
     algo = args.algo.lower()
     if algo not in algos:
-        print(f"Error: unsupported algo '{algo}'. Use: {', '.join(sorted(algos))}", file=sys.stderr)
-        sys.exit(1)
+        die(f"Error: unsupported algo '{algo}'. Use: {', '.join(sorted(algos))}")
 
     if args.file:
         h = hashlib.new(algo)
@@ -34,14 +61,14 @@ def cmd_hash(args):
         digest = h.hexdigest()
         print(f"{algo.upper()}: {digest}  ({args.file})")
     else:
-        data = " ".join(args.input).encode()
+        data = get_text_input(args).encode()
         digest = hashlib.new(algo, data).hexdigest()
         print(f"{algo.upper()}: {digest}")
 
 # ─── Encode / Decode ────────────────────────────────────
 
 def cmd_encode(args):
-    text = " ".join(args.input)
+    text = get_text_input(args)
     fmt = args.format.lower()
 
     if fmt == "base64":
@@ -53,19 +80,17 @@ def cmd_encode(args):
         out = out.replace('"', "&quot;").replace("'", "&#39;")
         print(out)
     else:
-        print(f"Error: unknown format '{fmt}'. Use: base64, url, html", file=sys.stderr)
-        sys.exit(1)
+        die(f"Error: unknown format '{fmt}'. Use: base64, url, html")
 
 def cmd_decode(args):
-    text = " ".join(args.input)
+    text = get_text_input(args)
     fmt = args.format.lower()
 
     if fmt == "base64":
         try:
             print(base64.b64decode(text).decode())
         except Exception as e:
-            print(f"Error: invalid base64 — {e}", file=sys.stderr)
-            sys.exit(1)
+            die(f"Error: invalid base64 — {e}")
     elif fmt == "url":
         print(unquote(text))
     elif fmt == "html":
@@ -73,8 +98,7 @@ def cmd_decode(args):
         out = out.replace("&quot;", '"').replace("&#39;", "'")
         print(out)
     else:
-        print(f"Error: unknown format '{fmt}'. Use: base64, url, html", file=sys.stderr)
-        sys.exit(1)
+        die(f"Error: unknown format '{fmt}'. Use: base64, url, html")
 
 # ─── UUID ───────────────────────────────────────────────
 
@@ -86,54 +110,34 @@ def cmd_uuid(args):
 # ─── JSON ───────────────────────────────────────────────
 
 def cmd_json(args):
-    text = " ".join(args.input)
+    text = get_text_input(args)
     sub = args.subcommand
 
     if sub == "format":
-        try:
-            obj = json.loads(text)
-            print(json.dumps(obj, indent=2, ensure_ascii=False))
-        except json.JSONDecodeError as e:
-            print(f"Error: invalid JSON — {e}", file=sys.stderr)
-            sys.exit(1)
-
+        obj = parse_json(text)
+        print(json.dumps(obj, indent=2, ensure_ascii=False))
     elif sub == "minify":
-        try:
-            obj = json.loads(text)
-            print(json.dumps(obj, separators=(",", ":"), ensure_ascii=False))
-        except json.JSONDecodeError as e:
-            print(f"Error: invalid JSON — {e}", file=sys.stderr)
-            sys.exit(1)
-
+        obj = parse_json(text)
+        print(json.dumps(obj, separators=(",", ":"), ensure_ascii=False))
     elif sub == "validate":
-        try:
-            json.loads(text)
-            print("✓ Valid JSON")
-        except json.JSONDecodeError as e:
-            print(f"✗ Invalid JSON — {e}", file=sys.stderr)
-            sys.exit(1)
-
+        parse_json(text)
+        print("✓ Valid JSON")
     else:
-        print(f"Error: unknown json subcommand '{sub}'", file=sys.stderr)
-        sys.exit(1)
+        die(f"Error: unknown json subcommand '{sub}'")
 
 # ─── Timestamp ──────────────────────────────────────────
 
 def cmd_ts(args):
-    val = " ".join(args.input) if args.input else "now"
+    val = get_text_input(args, default="now")
 
     if val.lower() == "now":
-        now = datetime.now(timezone.utc)
-        print(f"ISO:     {now.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        print(f"Unix:    {int(now.timestamp())}")
+        print_timestamp(datetime.now(timezone.utc))
         return
 
     # Try parsing as unix timestamp
     try:
         ts = float(val)
-        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-        print(f"ISO:     {dt.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        print(f"Unix:    {int(ts)}")
+        print_timestamp(datetime.fromtimestamp(ts, tz=timezone.utc))
         return
     except (ValueError, OSError):
         pass
@@ -142,14 +146,12 @@ def cmd_ts(args):
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d", "%d/%m/%Y %H:%M:%S"):
         try:
             dt = datetime.strptime(val, fmt).replace(tzinfo=timezone.utc)
-            print(f"ISO:     {dt.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-            print(f"Unix:    {int(dt.timestamp())}")
+            print_timestamp(dt)
             return
         except ValueError:
             continue
 
-    print(f"Error: cannot parse '{val}' as timestamp or date", file=sys.stderr)
-    sys.exit(1)
+    die(f"Error: cannot parse '{val}' as timestamp or date")
 
 # ─── Password ───────────────────────────────────────────
 
@@ -200,8 +202,7 @@ def cmd_lorem(args):
             paras.append(" ".join(make_sentence() for _ in range(sentences_per_para)))
         print("\n\n".join(paras))
     else:
-        print(f"Error: unknown unit '{unit}'. Use: words, sentences, paragraphs", file=sys.stderr)
-        sys.exit(1)
+        die(f"Error: unknown unit '{unit}'. Use: words, sentences, paragraphs")
 
 # ─── Main ───────────────────────────────────────────────
 

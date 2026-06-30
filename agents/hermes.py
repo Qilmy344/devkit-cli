@@ -1,7 +1,7 @@
 """Agent Hermes — network & messenger toolkit for devkit-cli.
 
-Hermes is a zero-dependency network agent with 9 built-in routes:
-  ping, info, ip, dns, http, headers, port, speed, whois
+Hermes is a zero-dependency network agent with 10 built-in routes:
+  ping, info, ip, dns, http, headers, port, speed, whois, cast
 """
 
 import json
@@ -32,6 +32,7 @@ class HermesRouter:
             "port": self.route_port,
             "speed": self.route_speed,
             "whois": self.route_whois,
+            "cast": self.route_cast,
         }
 
     def list_routes(self):
@@ -331,6 +332,96 @@ class HermesRouter:
             print(f"Error: WHOIS query failed — {e}", file=sys.stderr)
             sys.exit(1)
 
+    # ── 10. cast ─────────────────────────────────────────
+
+    def _cast_api(self, endpoint, api_key):
+        """Make a CAST AI API request."""
+        url = f"https://api.cast.ai{endpoint}"
+        req = urllib.request.Request(
+            url, headers={"X-API-Key": api_key, "User-Agent": "devkit-cli/1.0"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            try:
+                err = json.loads(body)
+                msg = err.get("message", str(e))
+            except json.JSONDecodeError:
+                msg = str(e)
+            print(f"CAST AI Error: {msg}", file=sys.stderr)
+            sys.exit(1)
+        except urllib.error.URLError as e:
+            print(f"Error: cannot reach CAST AI API — {e.reason}", file=sys.stderr)
+            sys.exit(1)
+
+    def route_cast(self, args):
+        """Interact with CAST AI (Kubernetes cost optimization)."""
+        api_key = os.environ.get("CASTAI_API_KEY", "")
+        if args.api_key:
+            api_key = args.api_key
+        if not api_key:
+            print("Error: CAST AI API key required. Set CASTAI_API_KEY or use --api-key", file=sys.stderr)
+            sys.exit(1)
+
+        sub = args.cast_action
+
+        if sub == "me":
+            data = self._cast_api("/v1/me", api_key)
+            print(f"CAST AI Account")
+            print(f"  ID:       {data.get('id', 'N/A')}")
+            print(f"  Name:     {data.get('name', 'N/A')}")
+            print(f"  Email:    {data.get('email', 'N/A')}")
+            print(f"  Username: {data.get('username', 'N/A')}")
+
+        elif sub == "org":
+            data = self._cast_api("/v1/organizations", api_key)
+            orgs = data.get("organizations", [])
+            print(f"CAST AI Organizations ({len(orgs)})\n")
+            for org in orgs:
+                print(f"  Name:      {org.get('name') or '(default)'}")
+                print(f"  ID:        {org.get('id', 'N/A')}")
+                print(f"  Type:      {org.get('type', 'N/A')}")
+                print(f"  Created:   {org.get('createdAt', 'N/A')}")
+                print()
+
+        elif sub == "clusters":
+            data = self._cast_api("/v1/kubernetes/external-clusters", api_key)
+            items = data.get("items", [])
+            if not items:
+                print("No clusters connected to CAST AI.")
+                print("Connect a cluster at https://app.kimchi.dev/")
+            else:
+                print(f"CAST AI Clusters ({len(items)})\n")
+                for c in items:
+                    print(f"  Name:     {c.get('name', 'N/A')}")
+                    print(f"  ID:       {c.get('id', 'N/A')}")
+                    print(f"  Provider: {c.get('cloudProvider', 'N/A')}")
+                    print(f"  Region:   {c.get('region', 'N/A')}")
+                    print(f"  Status:   {c.get('status', 'N/A')}")
+                    print(f"  Nodes:    {c.get('nodeCount', 'N/A')}")
+                    print()
+
+        elif sub == "tokens":
+            data = self._cast_api("/v1/auth/tokens", api_key)
+            items = data.get("items", [])
+            print(f"CAST AI API Tokens ({len(items)})\n")
+            for t in items:
+                status = "active" if t.get("active") else "inactive"
+                readonly = " (readonly)" if t.get("readonly") else ""
+                print(f"  {t.get('name', 'N/A'):<20} {t.get('tokenPrefix', ''):<16} {status}{readonly}")
+                print(f"    Created: {t.get('createdAt', 'N/A')}")
+                last_used = t.get("lastUsedAt", "never")
+                print(f"    Last used: {last_used}")
+                print()
+
+        else:
+            print("CAST AI — Kubernetes Cost Optimization")
+            print("Actions: me, org, clusters, tokens")
+            print("\nUsage: devkit hermes cast <action> [--api-key KEY]")
+            sys.exit(1)
+
 
 # ─── CLI Integration ────────────────────────────────────
 
@@ -341,7 +432,7 @@ def register_hermes(subparsers):
     """Register the hermes agent subcommand with the main CLI parser."""
     p = subparsers.add_parser(
         "hermes",
-        help="Agent Hermes — network & messenger toolkit (9 routes)",
+        help="Agent Hermes — network & messenger toolkit (10 routes)",
     )
     hsub = p.add_subparsers(dest="route")
 
@@ -383,6 +474,13 @@ def register_hermes(subparsers):
     # whois
     p_whois = hsub.add_parser("whois", help="WHOIS lookup for a domain")
     p_whois.add_argument("target", help="Domain name to query")
+
+    # cast
+    p_cast = hsub.add_parser("cast", help="CAST AI — Kubernetes cost optimization")
+    p_cast.add_argument("cast_action", nargs="?", default=None,
+                        choices=["me", "org", "clusters", "tokens"],
+                        help="Action: me, org, clusters, tokens")
+    p_cast.add_argument("--api-key", default=None, help="CAST AI API key (or set CASTAI_API_KEY)")
 
     return p
 

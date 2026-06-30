@@ -11,6 +11,16 @@ A fast, zero-dependency Python CLI toolkit for everyday developer tasks.
 - **Timestamp** — Convert between Unix timestamps and human-readable dates
 - **Lorem** — Generate placeholder text
 - **Password** — Generate secure random passwords
+- **Agent Hermes** — Network & messenger toolkit with 9 routes:
+  - `ping` — Check if a host is reachable
+  - `info` — Show local system & network info
+  - `ip` — Show local and public IP addresses
+  - `dns` — DNS lookup for a hostname
+  - `http` — HTTP GET request with response preview
+  - `headers` — Show HTTP response headers
+  - `port` — Check if TCP ports are open
+  - `speed` — Download speed test
+  - `whois` — WHOIS lookup for a domain
 
 ## Installation
 
@@ -57,6 +67,39 @@ devkit password --length 32 --no-symbols
 
 # Lorem ipsum
 devkit lorem 3 paragraphs
+```
+
+## Agent Hermes
+
+```bash
+# Check if a host is reachable
+devkit hermes ping google.com
+
+# Show system & network info
+devkit hermes info
+
+# Show local and public IP
+devkit hermes ip
+
+# DNS lookup
+devkit hermes dns example.com
+
+# HTTP GET request
+devkit hermes http example.com
+devkit hermes http example.com --full
+
+# Show HTTP response headers
+devkit hermes headers example.com
+
+# Check TCP ports
+devkit hermes port example.com --ports 80,443,8080
+
+# Download speed test
+devkit hermes speed
+devkit hermes speed --large
+
+# WHOIS lookup
+devkit hermes whois example.com
 ```
 
 ## Requirements

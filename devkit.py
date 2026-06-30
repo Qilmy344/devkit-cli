@@ -15,6 +15,8 @@ import uuid
 from datetime import datetime, timezone
 from urllib.parse import quote, unquote
 
+from agents.hermes import register_hermes, run_hermes
+
 __version__ = "1.0.0"
 
 # ─── Hash ───────────────────────────────────────────────
@@ -249,6 +251,9 @@ def main():
     p_lorem.add_argument("count", nargs="?", type=int, default=1)
     p_lorem.add_argument("unit", nargs="?", default="paragraphs")
 
+    # hermes agent
+    register_hermes(sub)
+
     args = parser.parse_args()
 
     dispatch = {
@@ -260,6 +265,7 @@ def main():
         "ts": cmd_ts,
         "password": cmd_password,
         "lorem": cmd_lorem,
+        "hermes": run_hermes,
     }
 
     if not args.command:

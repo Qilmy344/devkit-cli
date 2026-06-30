@@ -405,6 +405,65 @@ def handle_cast(args):
         )
 
 
+CASTAI_LLM_PROVIDER_ID = "a557c8e8-068c-4a17-bbc7-d83a1500caf1"
+
+
+def handle_ai(args):
+    if not CASTAI_API_KEY:
+        return "Error: CASTAI_API_KEY not configured on server"
+    if not args:
+        return "Usage: /ai <your question>\nExample: /ai What is Kubernetes?"
+
+    prompt = " ".join(args)
+    payload = json.dumps({
+        "selectedPlaygroundProviders": [],
+        "selectedRegisteredProviders": [
+            {"id": CASTAI_LLM_PROVIDER_ID, "models": ["minimax-m3"]}
+        ],
+        "proxyChatCompletion": {
+            "model": "minimax-m3",
+            "messages": [{"role": "user", "content": prompt}],
+            "maxTokens": 1024,
+        },
+        "routerChatCompletion": {
+            "model": "minimax-m3",
+            "messages": [{"role": "user", "content": prompt}],
+            "maxTokens": 1024,
+        },
+    }).encode()
+
+    url = "https://api.cast.ai/v1/llm/playground-chat-completions"
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "X-API-Key": CASTAI_API_KEY,
+            "Content-Type": "application/json",
+            "User-Agent": "hermes-bot/1.0",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        return f"Error: {body[:200]}"
+    except urllib.error.URLError as e:
+        return f"Error: cannot reach AI model \u2014 {e.reason}"
+
+    routed = data.get("routedResponse", {})
+    chat = routed.get("chatCompletion", {})
+    choices = chat.get("choices", [])
+
+    if choices:
+        reply = choices[0].get("message", {}).get("content", "")
+        usage = chat.get("usage", {})
+        tokens = usage.get("totalTokens", "?")
+        return f"\U0001f916 MiniMax M3:\n\n{reply}\n\n\u2500 tokens: {tokens}"
+    return "No response from model."
+
+
 # ─── Command dispatcher ─────────────────────────────────
 
 COMMANDS = {
@@ -418,11 +477,12 @@ COMMANDS = {
     "speed": handle_speed,
     "whois": handle_whois,
     "cast": handle_cast,
+    "ai": handle_ai,
 }
 
 HELP_TEXT = """🛡 *Agent Hermes* — Network & Messenger Toolkit
 
-Available commands (10 routes):
+Available commands (11 routes):
 
 /ping <host> [count] — Check if host is reachable
 /info — Show server system info
@@ -434,6 +494,7 @@ Available commands (10 routes):
 /speed — Download speed test
 /whois <domain> — WHOIS lookup
 /cast <action> — CAST AI (me/org/clusters/tokens)
+/ai <question> — Chat with MiniMax M3 AI
 
 /help — Show this help message
 /start — Welcome message"""

@@ -1,7 +1,7 @@
 """Agent Hermes — network & messenger toolkit for devkit-cli.
 
-Hermes is a zero-dependency network agent with 10 built-in routes:
-  ping, info, ip, dns, http, headers, port, speed, whois, cast
+Hermes is a zero-dependency network agent with 11 built-in routes:
+  ping, info, ip, dns, http, headers, port, speed, whois, cast, ai
 """
 
 import json
@@ -33,6 +33,7 @@ class HermesRouter:
             "speed": self.route_speed,
             "whois": self.route_whois,
             "cast": self.route_cast,
+            "ai": self.route_ai,
         }
 
     def list_routes(self):
@@ -422,6 +423,74 @@ class HermesRouter:
             print("\nUsage: devkit hermes cast <action> [--api-key KEY]")
             sys.exit(1)
 
+    # ── 11. ai ──────────────────────────────────────────────
+
+    CASTAI_LLM_PROVIDER_ID = "a557c8e8-068c-4a17-bbc7-d83a1500caf1"
+
+    def route_ai(self, args):
+        """Chat with MiniMax M3 AI model via CAST AI."""
+        api_key = os.environ.get("CASTAI_API_KEY", "")
+        if hasattr(args, "api_key") and args.api_key:
+            api_key = args.api_key
+        if not api_key:
+            print("Error: CAST AI API key required. Set CASTAI_API_KEY or use --api-key", file=sys.stderr)
+            sys.exit(1)
+
+        prompt = " ".join(args.prompt) if hasattr(args, "prompt") and args.prompt else None
+        if not prompt:
+            print("Usage: devkit hermes ai \"your question here\"")
+            sys.exit(1)
+
+        payload = json.dumps({
+            "selectedPlaygroundProviders": [],
+            "selectedRegisteredProviders": [
+                {"id": self.CASTAI_LLM_PROVIDER_ID, "models": ["minimax-m3"]}
+            ],
+            "proxyChatCompletion": {
+                "model": "minimax-m3",
+                "messages": [{"role": "user", "content": prompt}],
+                "maxTokens": 1024,
+            },
+            "routerChatCompletion": {
+                "model": "minimax-m3",
+                "messages": [{"role": "user", "content": prompt}],
+                "maxTokens": 1024,
+            },
+        }).encode()
+
+        url = "https://api.cast.ai/v1/llm/playground-chat-completions"
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={
+                "X-API-Key": api_key,
+                "Content-Type": "application/json",
+                "User-Agent": "devkit-cli/1.0",
+            },
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            print(f"Error: {body}", file=sys.stderr)
+            sys.exit(1)
+        except urllib.error.URLError as e:
+            print(f"Error: cannot reach CAST AI — {e.reason}", file=sys.stderr)
+            sys.exit(1)
+
+        routed = data.get("routedResponse", {})
+        chat = routed.get("chatCompletion", {})
+        choices = chat.get("choices", [])
+
+        if choices:
+            reply = choices[0].get("message", {}).get("content", "")
+            print(reply)
+        else:
+            print("No response from model.", file=sys.stderr)
+            sys.exit(1)
+
 
 # ─── CLI Integration ────────────────────────────────────
 
@@ -432,7 +501,7 @@ def register_hermes(subparsers):
     """Register the hermes agent subcommand with the main CLI parser."""
     p = subparsers.add_parser(
         "hermes",
-        help="Agent Hermes — network & messenger toolkit (10 routes)",
+        help="Agent Hermes — network & messenger toolkit (11 routes)",
     )
     hsub = p.add_subparsers(dest="route")
 
@@ -481,6 +550,11 @@ def register_hermes(subparsers):
                         choices=["me", "org", "clusters", "tokens"],
                         help="Action: me, org, clusters, tokens")
     p_cast.add_argument("--api-key", default=None, help="CAST AI API key (or set CASTAI_API_KEY)")
+
+    # ai
+    p_ai = hsub.add_parser("ai", help="Chat with MiniMax M3 AI model")
+    p_ai.add_argument("prompt", nargs="+", help="Your question or prompt")
+    p_ai.add_argument("--api-key", default=None, help="CAST AI API key (or set CASTAI_API_KEY)")
 
     return p
 
